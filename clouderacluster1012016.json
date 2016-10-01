@@ -1,0 +1,501 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "Infrastructure for deployment of CDH Cluster.",
+	"Parameters": {
+		"ClusterSize": {
+			"Description": "Number of CDH Nodes (1 - 100)",
+			"Type": "String",
+			"Default": "5",
+			"AllowedPattern": "(\\d{1,3})"
+		},
+		"KeyName": {
+			"Description": "Select a Key",
+			"Type": "AWS::EC2::KeyPair::KeyName"
+		},
+		"VPCCIDR": {
+			"Description": "CIDR Block for the VPC you are creating.",
+			"Type": "String",
+			"Default": "10.0.0.0/16",
+			"AllowedPattern": "[a-zA-Z0-9]+\\..+"
+		},
+		"PrivSubCIDR": {
+			"Description": "CIDR Block for Private Subnet where Cloudera Hadoop will be deployed.",
+			"Type": "String",
+			"Default": "10.0.1.0/24",
+			"AllowedPattern": "[a-zA-Z0-9]+\\..+"
+		},
+		"RemoteAccessCIDR": {
+			"Description": "IP CIDR from which you are likely to SSH to CM Instance. You can add rules later by modifying the created security groups e.g. 54.32.98.160/32.",
+			"Type": "String",
+			"MinLength": "9",
+			"MaxLength": "18",
+			"AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+			"ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x."
+		},
+		"AvailabilityZone": {
+			"Description": "Pick an Availability Zone for Cloudera Subnet",
+			"Type": "AWS::EC2::AvailabilityZone::Name"
+		},
+		"CMInstanceType": {
+			"Description": "Cloudera Manager Instance Type",
+			"Type": "String",
+			"Default": "t2.large",
+			"AllowedValues": [
+				"t2.large",
+				"m4.large",
+				"t2.medium",
+				"m4.xlarge",
+				"m4.2xlarge",
+				"m4.4xlarge",
+				"m4.10xlarge",
+				"m3.large",
+				"m3.xlarge",
+				"m3.2xlarge",
+				"m1.xlarge",
+				"c4.large",
+				"c4.xlarge",
+				"c4.2xlarge",
+				"c4.4xlarge",
+				"c4.8xlarge",
+				"c3.large",
+				"c3.xlarge",
+				"c3.2xlarge",
+				"c3.4xlarge",
+				"c3.8xlarge",
+				"g2.2xlarge",
+				"g2.8xlarge",
+				"r3.large",
+				"r3.xlarge",
+				"r3.2xlarge",
+				"r3.4xlarge",
+				"r3.8xlarge",
+				"d2.xlarge",
+				"d2.2xlarge",
+				"d2.4xlarge",
+				"d2.8xlarge",
+				"i2.xlarge",
+				"i2.2xlarge",
+				"i2.4xlarge",
+				"i2.8xlarge"
+			]
+		},
+		"CDHInstanceType": {
+			"Description": "CDH Instance Type",
+			"Type": "String",
+			"Default": "t2.large",
+			"AllowedValues": [
+				"t2.large",
+				"m4.large",
+				"t2.medium",
+				"m4.xlarge",
+				"m4.2xlarge",
+				"m4.4xlarge",
+				"m4.10xlarge",
+				"m3.large",
+				"m3.xlarge",
+				"m3.2xlarge",
+				"m1.xlarge",
+				"c4.large",
+				"c4.xlarge",
+				"c4.2xlarge",
+				"c4.4xlarge",
+				"c4.8xlarge",
+				"c3.large",
+				"c3.xlarge",
+				"c3.2xlarge",
+				"c3.4xlarge",
+				"c3.8xlarge",
+				"g2.2xlarge",
+				"g2.8xlarge",
+				"r3.large",
+				"r3.xlarge",
+				"r3.2xlarge",
+				"r3.4xlarge",
+				"r3.8xlarge",
+				"d2.xlarge",
+				"d2.2xlarge",
+				"d2.4xlarge",
+				"d2.8xlarge",
+				"i2.xlarge",
+				"i2.2xlarge",
+				"i2.4xlarge",
+				"i2.8xlarge"
+			]
+		}
+	},
+	"Metadata" : {
+		"AWS::CloudFormation::Interface" : {
+			"ParameterGroups" : [
+				{
+					"Label" : { "default" : "Network Configuration" },
+					"Parameters" : [ "VPCCIDR", "PrivSubCIDR", "RemoteAccessCIDR" ]
+				},
+				{
+					"Label" : { "default" : "Amazon EC2 Configuration" },
+					"Parameters" : [ "CMInstanceType", "CDHInstanceType" ]
+				}
+			],
+			"ParameterLabels" : {
+				"VPCCIDR" : { "default" : "Enter your VPC CIDR Block:"},
+				"PrivSubCIDR" : { "default" : "Enter Your Private CIDR Block:"},
+				"CMInstanceType" : { "default" : "Select instance size for Cloudera Manager:"},
+				"CDHInstanceType" : { "default" : "Select instance size for CDH Node:"},
+				"AvailabilityZone" : { "default" : "Select Availability Zone:"},
+				"ClusterSize" : { "default" : "Enter Size of CDH Cluster:"},
+				"KeyName" : { "default" : "Select Key Pair:"},
+				"RemoteAccessCIDR" : { "default" : "Enter Remote Access IP or IP Range:"}
+			}
+		}
+	},
+	"Mappings": {
+		"EC2RegionMap": {
+			"us-east-1":
+				{"cdhimg" : "ami-3e521529",
+				 "cmimg" : "ami-3a52152d"
+				}
+		}
+	},
+	"Resources": {
+		"VPC": {
+			"Type": "AWS::EC2::VPC",
+			"Properties": {
+				"CidrBlock": {
+					"Ref": "VPCCIDR"
+				},
+				"EnableDnsHostnames": "true",
+				"EnableDnsSupport": "true",
+				"Tags": [{
+					"Key": "Application",
+					"Value": "CDH"
+				}]
+			}
+		},
+		"InternetGateway": {
+			"Type": "AWS::EC2::InternetGateway"
+		},
+		"AttachGateway": {
+			"Type": "AWS::EC2::VPCGatewayAttachment",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"InternetGatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"ClouderaSubnet": {
+			"Type": "AWS::EC2::Subnet",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"CidrBlock": {
+					"Ref": "PrivSubCIDR"
+				},
+				"Tags": [{
+					"Key": "Application",
+					"Value": "CDH"
+				}, {
+					"Key": "Network",
+					"Value": "Private (Cloudera)"
+				}],
+				"AvailabilityZone": {
+					"Ref": "AvailabilityZone"
+				}
+			}
+		},
+		"CMInstance": {
+			"Type": "AWS::EC2::Instance",
+			
+			"Properties": {
+				"ImageId": {"Fn::FindInMap": ["EC2RegionMap", {"Ref": "AWS::Region"}, "cmimg"]},
+				"IamInstanceProfile": {
+					"Ref": "ClusterLauncherProfile"
+				},
+				"InstanceType": {"Ref": "CMInstanceType"},
+				"KeyName": {"Ref": "KeyName"},
+				"NetworkInterfaces" : [{
+					"GroupSet": [{ "Ref": "CDHSG" }],
+					"AssociatePublicIpAddress" : "true",
+					"DeviceIndex"              : "0",
+					"DeleteOnTermination"      : "true",
+					"SubnetId"                 : { "Ref" : "ClouderaSubnet" }
+				}],
+				"Tags": [{"Key" : "Name", "Value" : "Cloudera Manager"}],
+				"UserData":
+					{"Fn::Base64": {"Fn::Join": ["", [
+						"#!/bin/bash -ex\n",
+						"/opt/init/initcm.sh }} /bin/true\n"
+					]]}}
+			}
+		},
+		"LaunchConfig" : {
+			"Type" : "AWS::AutoScaling::LaunchConfiguration",
+			"Properties" : {
+				"AssociatePublicIpAddress" : "true",
+				"IamInstanceProfile": {
+					"Ref": "ClusterLauncherProfile"
+				},
+				"ImageId" : {"Fn::FindInMap": ["EC2RegionMap", {"Ref": "AWS::Region"}, "cdhimg"]},
+				"InstanceType" : { "Ref" : "CDHInstanceType" },
+				"KeyName" : { "Ref" : "KeyName" },
+				"SecurityGroups" : [ { "Ref" : "CDHSG" } ],
+				"UserData":
+					{"Fn::Base64": {"Fn::Join": ["", [
+						"#!/bin/bash -ex\n",
+						"/opt/init/initcdh.sh }} /bin/true\n"
+					]]}}
+			}
+		},
+		"ClouderaClusterGroup" : {
+			"Type" : "AWS::AutoScaling::AutoScalingGroup",
+			"Properties" : {
+				"AvailabilityZones" : [ { "Ref" : "AvailabilityZone"} ],
+				"DesiredCapacity" : { "Ref" : "ClusterSize"},
+				"LaunchConfigurationName" : { "Ref" : "LaunchConfig" },
+				"MinSize" : "1",
+				"MaxSize" : "100",
+				"VPCZoneIdentifier" : [ {"Ref" : "ClouderaSubnet"} ],
+				"Tags" : [ {
+					"Key" : "Name",
+					"Value" : "CDH Node",
+					"PropagateAtLaunch" : "true"
+				}, {
+					"Key" : "Name1",
+					"Value" : "CDH Cluster Group",
+					"PropagateAtLaunch" : "false"
+				} ]
+			}
+		},
+		"CDHSG": {
+			"Type": "AWS::EC2::SecurityGroup",
+			"Properties": {
+				"GroupDescription": "CDH Security Group",
+				"VpcId": {"Ref": "VPC"},
+				"Tags" : [{"Key" : "Name", "Value" : "CDHSG"}],
+				"SecurityGroupIngress": [{
+					"IpProtocol": "tcp",
+					"FromPort": 22,
+					"ToPort": 22,
+					"CidrIp": {
+						"Ref": "RemoteAccessCIDR"
+					}
+				}, {
+					"IpProtocol": "tcp",
+					"FromPort": "7180",
+					"ToPort": "7180",
+					"CidrIp": "0.0.0.0/0"
+				}, {
+					"IpProtocol": "tcp",
+					"FromPort": "80",
+					"ToPort": "80",
+					"CidrIp": "0.0.0.0/0"
+				}, {
+					"IpProtocol": "tcp",
+					"FromPort": "1",
+					"ToPort": "65535",
+					"CidrIp": {
+						"Ref": "VPCCIDR"
+					}
+				}],
+				"SecurityGroupEgress": [{
+					"IpProtocol": "tcp",
+					"FromPort": "1",
+					"ToPort": "65535",
+					"CidrIp": "0.0.0.0/0"
+				}, {
+					"IpProtocol": "udp",
+					"FromPort": "1",
+					"ToPort": "65535",
+					"CidrIp": "0.0.0.0/0"
+				}]
+			}
+		},
+		"ClouderaClusterRouteTable": {
+			"Type": "AWS::EC2::RouteTable",
+			"Properties": {
+				"VpcId": {
+					"Ref": "VPC"
+				},
+				"Tags": [{
+					"Key": "Application",
+					"Value": "CDH"
+				}]
+			}
+		},
+		"ClouderaClusterRoute": {
+			"Type": "AWS::EC2::Route",
+			"Properties": {
+				"RouteTableId": {
+					"Ref": "ClouderaClusterRouteTable"
+				},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"GatewayId": {
+					"Ref": "InternetGateway"
+				}
+			}
+		},
+		"ClouderaSubnetRouteTableAssociation": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"Properties": {
+				"SubnetId": {
+					"Ref": "ClouderaSubnet"
+				},
+				"RouteTableId": {
+					"Ref": "ClouderaClusterRouteTable"
+				}
+			}
+		},
+		"ClusterLauncherInstanceRootRole": {
+			"Type": "AWS::IAM::Role",
+			"Properties": {
+				"AssumeRolePolicyDocument": {
+					"Version": "2012-10-17",
+					"Statement": [{
+						"Effect": "Allow",
+						"Principal": {
+							"Service": [
+								"ec2.amazonaws.com"
+							]
+						},
+						"Action": [
+							"sts:AssumeRole"
+						]
+					}]
+				},
+				"Path": "/",
+				"Policies": [{
+					"PolicyName": "root",
+					"PolicyDocument": {
+						"Version": "2012-10-17",
+						"Statement": [{
+							"Effect": "Allow",
+							"Action": [
+								"s3:*",
+								"ec2:Describe*",
+								"ec2:AttachNetworkInterface",
+								"ec2:AttachVolume",
+								"ec2:CreateTags",
+								"ec2:CreateVolume",
+								"ec2:DeleteVolume",
+								"ec2:RunInstances",
+								"ec2:StartInstances",
+								"ec2:CreateSecurityGroup",
+								"ec2:CreatePlacementGroup",
+								"ec2:CreateSnapshot",
+								"*"
+							],
+							"Resource": "*"
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"cloudformation:CreateStack",
+								"cloudformation:DeleteStack",
+								"cloudformation:DescribeStack",
+								"cloudformation:EstimateTemplateCost",
+								"cloudformation:ValidateTemplate",
+								"cloudformation:DescribeStackEvents",
+								"cloudformation:DescribeStackResource",
+								"cloudformation:DescribeStackResources",
+								"cloudformation:DescribeStacks"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"iam:CreateRole"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"iam:PutRolePolicy"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"iam:CreateInstanceProfile"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"iam:AddRoleToInstanceProfile"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"iam:PassRole"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"ec2:RevokeSecurityGroupEgress"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"ec2:AuthorizeSecurityGroupEgress"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"ec2:AuthorizeSecurityGroupIngress"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"ec2:CreateNetworkInterface"
+							],
+							"Resource": [
+								"*"
+							]
+						}, {
+							"Effect": "Allow",
+							"Action": [
+								"ec2:ModifyNetworkInterfaceAttribute"
+							],
+							"Resource": [
+								"*"
+							]
+						}]
+					}
+				}]
+			}
+		},
+		"ClusterLauncherProfile": {
+			"Type": "AWS::IAM::InstanceProfile",
+			"Properties": {
+				"Path": "/",
+				"Roles": [{
+					"Ref": "ClusterLauncherInstanceRootRole"
+				}]
+			}
+		}
+	}
+}
